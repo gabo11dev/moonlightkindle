@@ -2,7 +2,7 @@
 set -u
 app_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
 mkdir -p "$app_dir/data"
-printf '\nMoonlight 0.3.0: checking installation in %s\n' "$app_dir"
+printf '\nMoonlight 0.1: checking installation in %s\n' "$app_dir"
 missing=0
 for required in runtime/ld-linux-armhf.so.3 bin/moonlight-kindle runtime/lib/libfbink.so.1 runtime/lib/libgtk-x11-2.0.so.0 runtime/lib/libc.so.6 runtime/fonts/DejaVuSans.ttf; do
     if [ ! -s "$app_dir/$required" ]; then

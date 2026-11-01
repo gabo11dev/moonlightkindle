@@ -1,7 +1,7 @@
 {
     "items": [
         {
-            "name": "Moonlight for Kindle",
+            "name": "Moonlight",
             "priority": -100,
             "action": "/bin/sh",
             "params": "/mnt/us/extensions/moonlight/launch.sh",

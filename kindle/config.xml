@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <extension>
     <information>
-        <name>Moonlight for Kindle</name>
-        <version>0.3.0</version>
+        <name>Moonlight</name>
+        <version>0.1</version>
         <author>Moonlight Kindle contributors</author>
         <id>org.moonlight.kindle</id>
     </information>
