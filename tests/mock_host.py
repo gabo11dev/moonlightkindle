@@ -4,6 +4,8 @@ Usage: mock_host.py [emulator and loader options ...] /path/to/protocol-test
 """
 import http.server, ssl, subprocess, sys, tempfile, threading
 from pathlib import Path
+from urllib.parse import urlsplit, parse_qs
+launch_modes=[]
 class Host(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_GET(self):
@@ -15,6 +17,7 @@ class Host(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith('/applist'):
             body='<root status_code="200"><App><ID>123</ID><AppTitle>Desktop</AppTitle></App></root>'
         elif self.path.startswith('/launch'):
+            launch_modes.append(parse_qs(urlsplit(self.path).query)['mode'][0])
             body='<root status_code="503" status_message="Fixture launch rejected"><gamesession>0</gamesession></root>'
         else:
             self.send_error(404); return
@@ -31,6 +34,7 @@ with tempfile.TemporaryDirectory(prefix='moonlight-protocol-') as tmp:
     try:
         result=subprocess.run(sys.argv[1:]+[str(http_server.server_port),str(keys)],timeout=60)
         assert (keys/'uniqueid.dat').read_text()!='0123456789ABCDEF'
+        assert launch_modes == ['640x360x10', '1448x1072x1', '800x600x30'], launch_modes
     finally:
         http_server.shutdown(); tls.shutdown(); http_server.server_close(); tls.server_close()
     sys.exit(result.returncode)
