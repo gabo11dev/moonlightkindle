@@ -1,0 +1,17 @@
+/build*/
+/package/
+/data/
+/keys/
+/runtime/
+__pycache__/
+*.py[cod]
+*.log
+*.h264
+client.pem
+client.p12
+key.pem
+uniqueid.dat
+settings.ini
+
+/vendor/moonlight-common-c/
+/vendor/FBInk/
