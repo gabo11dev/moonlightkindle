@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension>
+    <information>
+        <name>Moonlight for Kindle</name>
+        <version>0.3.0</version>
+        <author>Moonlight Kindle contributors</author>
+        <id>org.moonlight.kindle</id>
+    </information>
+    <menus>
+        <menu type="json" dynamic="true">menu.json</menu>
+    </menus>
+</extension>
