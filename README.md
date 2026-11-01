@@ -1,4 +1,4 @@
-# Moonlight for Kindle
+# Moonlight
 
 An experimental GTK2 Moonlight client for jailbroken Kindle e-readers. Stream a PC running [Sunshine](https://github.com/LizardByte/Sunshine) to an e-ink display, with touch mouse input and a basic on-screen keyboard.
 
@@ -9,19 +9,25 @@ This project was created with AI assistance using OpenAI Codex. AI generated and
 ## Features and limitations
 
 - GTK2 interface in English, landscape orientation, and full-screen Kindle window metadata.
+- Preset resolutions plus **Custom** width and height, saved between sessions. Custom dimensions must be even, with width 16–1920 and height 16–1080; host support and Kindle decoding speed may limit usable sizes.
+- **Refresh screen** button beside the keyboard and disconnect controls to clear accumulated ghosting. `Refresh screen` runs `eips -c` on the Kindle and immediately repaints the interface and current frame, even when no video frames arrive. If the command fails, it falls back to FBInk.
 - Software H.264 decoding with FFmpeg and grayscale display updates through FBInk.
 - Pairing, application selection, streaming, touch mouse input, and a basic keyboard.
 - Persistent client identity outside the extension folder, so replacing the application does not normally erase pairing keys.
 - Video controls hide during streaming. Tap the top-right corner to show them, then use **Back to video** to hide them again.
 
-The current build targets ARMv7 with NEON and the hard-float ABI, using the modern Kindle toolchain. A jailbreak, KUAL, and a working GTK2/X11 environment are required. Other hardware and firmware combinations are unverified. E-ink refresh and software decoding severely limit motion quality: begin with 640 × 360, 5 FPS, and a low bitrate. Screen presentation is capped at approximately 10 updates per second even if a higher stream rate is requested. Audio plays on the host only. Hardware decoding, HEVC, AV1, HDR, gamepads, and automatic PC discovery are not implemented.
+The current build targets ARMv7 with NEON and the hard-float ABI, using the modern Kindle toolchain. A jailbreak, KUAL, and a working GTK2/X11 environment are required. Other hardware and firmware combinations are unverified. E-ink refresh and software decoding severely limit motion quality: begin with 640 × 360, 5 FPS, and a low bitrate. FPS can be set from 1 to 30. The presentation loop checks for the newest frame every 33 ms, but actual screen refresh depends on the device and waveform. Audio plays on the host only. Hardware decoding, HEVC, AV1, HDR, gamepads, and automatic PC discovery are not implemented.
+
+## Download version 0.1
+
+Download **moonlight-v0.1-complete.zip** from [GitHub Releases](https://github.com/gabo11dev/moonlightkindle/releases/tag/v0.1). This is the installable KUAL package, including the private ARM runtime and loader. The source ZIP and SHA256 checksums are attached to the same release.
 
 ## Install a complete package
 
-A source checkout alone is not an installable KUAL package. Build and package the application as described below, including its private runtime.
+Use the complete ZIP from Releases for installation. A source checkout alone is not an installable KUAL package; source builds must also be packaged with the private runtime as described below.
 
 1. Copy the complete `moonlight` directory into `/mnt/us/extensions/`, without adding an extra enclosing folder.
-2. Safely eject the Kindle, open KUAL, and select **Moonlight for Kindle**.
+2. Safely eject the Kindle, open KUAL, and select **Moonlight**.
 3. Enter the PC's local network address and choose **Pair**. Enter the displayed PIN in Sunshine on the PC.
 4. Choose **Load apps**, select an application, then choose **Start**.
 

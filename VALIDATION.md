@@ -21,6 +21,13 @@ ffmpeg -f lavfi -i testsrc2=size=640x360:rate=5 -frames:v 20 -c:v libx264 -prese
 
 With an X server available, `./build/moonlight-kindle --smoke-test` creates and closes the interface. Use `--preview-kindle` for a desktop preview. The ARM executable and protocol tests can also run under qemu-arm with the matching private loader and library path.
 
+The optional UI harness checks full-screen transitions, the menu touch corner, manual refresh after pending GTK paint, 1 FPS persistence, and custom resolution validation and persistence. It sends no host input:
+
+```sh
+cmake --build build --target ui-test
+MOONLIGHT_DATA_DIR=/tmp/moonlight-ui-test xvfb-run -a -s "-screen 0 1448x1072x24" ./build/ui-test
+```
+
 ## Scope
 
 Earlier application versions were opened on a user's jailbroken Kindle. Pairing fixes were exercised with local HTTP/TLS fixtures, including an ARM build under emulation. Such checks do not establish compatibility with every Sunshine release, firmware, or Kindle model. Real-device streaming performance, orientation, suspend/resume, and the current pairing changes require testing on the target device. A full PC-to-Kindle session is not covered by these automated fixtures.
