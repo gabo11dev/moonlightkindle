@@ -23,6 +23,7 @@
  * single-slot mailbox so a slow e-ink refresh cannot accumulate video latency. */
 static GtkWidget *window, *host_entry, *pin_entry, *apps_combo, *controls, *status_label;
 static GtkWidget *canvas, *fps_spin, *bitrate_spin, *res_combo, *actions, *stop_button;
+static GtkWidget *custom_row, *width_spin, *height_spin;
 static GtkWidget *text_entry, *osk, *typing_target;
 static GtkWidget *header, *text_bar, *bottom_bar, *stream_menu_button, *root_box;
 static int stream_controls = 1, menu_release_pending;
@@ -37,7 +38,7 @@ static char *key_dir, *settings_path;
 static int app_ids[512], app_count, result_count;
 static char *result_names[512];
 static int result_ids[512];
-static int refresh_pending, frame_w, frame_h;
+static int refresh_pending, full_refresh_pending, frame_w, frame_h;
 static enum { JOB_PAIR, JOB_LIST, JOB_STREAM } job_type;
 typedef struct { int type, app_id, width, height, fps, bitrate; char *host; char pin[5]; } Job;
 extern void gs_destroy(PSERVER_DATA server);
@@ -142,12 +143,29 @@ finish:
     pthread_mutex_lock(&state_lock); done = 1; pthread_mutex_unlock(&state_lock);
     return NULL;
 }
+static void resolution_changed(GtkWidget *widget, gpointer data) {
+    if (gtk_combo_box_get_active(GTK_COMBO_BOX(res_combo)) == 3) gtk_widget_show(custom_row);
+    else gtk_widget_hide(custom_row);
+}
+static int selected_resolution(int *width, int *height) {
+    int res = gtk_combo_box_get_active(GTK_COMBO_BOX(res_combo));
+    const int widths[] = {640, 800, 960}, heights[] = {360, 450, 540};
+    if (res >= 0 && res < 3) { *width = widths[res]; *height = heights[res]; return 1; }
+    if (res != 3) return 0;
+    gtk_spin_button_update(GTK_SPIN_BUTTON(width_spin));
+    gtk_spin_button_update(GTK_SPIN_BUTTON(height_spin));
+    *width = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(width_spin));
+    *height = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(height_spin));
+    return *width >= 16 && *width <= 1920 && *height >= 16 && *height <= 1080 && !(*width % 2) && !(*height % 2);
+}
 static void save_settings(void) {
     GKeyFile *kf = g_key_file_new();
     g_key_file_set_string(kf, "stream", "host", gtk_entry_get_text(GTK_ENTRY(host_entry)));
     g_key_file_set_integer(kf, "stream", "fps", gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(fps_spin)));
     g_key_file_set_integer(kf, "stream", "bitrate", gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(bitrate_spin)));
     g_key_file_set_integer(kf, "stream", "resolution", gtk_combo_box_get_active(GTK_COMBO_BOX(res_combo)));
+    g_key_file_set_integer(kf, "stream", "custom_width", gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(width_spin)));
+    g_key_file_set_integer(kf, "stream", "custom_height", gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(height_spin)));
     gsize length; gchar *data = g_key_file_to_data(kf, &length, NULL);
     g_file_set_contents(settings_path, data, length, NULL); g_free(data); g_key_file_free(kf);
 }
@@ -160,9 +178,13 @@ static void load_settings(void) {
         int fps = g_key_file_get_integer(kf, "stream", "fps", NULL);
         int rate = g_key_file_get_integer(kf, "stream", "bitrate", NULL);
         int res = g_key_file_get_integer(kf, "stream", "resolution", NULL);
-        if (fps >= 5 && fps <= 30) gtk_spin_button_set_value(GTK_SPIN_BUTTON(fps_spin), fps);
+        if (fps >= 1 && fps <= 30) gtk_spin_button_set_value(GTK_SPIN_BUTTON(fps_spin), fps);
         if (rate >= 250 && rate <= 10000) gtk_spin_button_set_value(GTK_SPIN_BUTTON(bitrate_spin), rate);
-        if (res >= 0 && res <= 2) gtk_combo_box_set_active(GTK_COMBO_BOX(res_combo), res);
+        int width = g_key_file_get_integer(kf, "stream", "custom_width", NULL);
+        int height = g_key_file_get_integer(kf, "stream", "custom_height", NULL);
+        if (width >= 16 && width <= 1920 && !(width % 2)) gtk_spin_button_set_value(GTK_SPIN_BUTTON(width_spin), width);
+        if (height >= 16 && height <= 1080 && !(height % 2)) gtk_spin_button_set_value(GTK_SPIN_BUTTON(height_spin), height);
+        if (res >= 0 && res <= 3) gtk_combo_box_set_active(GTK_COMBO_BOX(res_combo), res);
     }
     g_key_file_free(kf);
 }
@@ -173,15 +195,17 @@ static void start_job(GtkWidget *button, gpointer data) {
     if (!host[0] || strpbrk(host, " /?#@\t\r\n")) { set_message("Enter the host address without http:// or a port."); return; }
     int index = gtk_combo_box_get_active(GTK_COMBO_BOX(apps_combo));
     if (type == JOB_STREAM && (index < 0 || index >= app_count)) { set_message("Load the apps and select one."); return; }
+    int width = 640, height = 360;
+    if (!selected_resolution(&width, &height) && type == JOB_STREAM) {
+        set_message("Use even dimensions: width 16–1920, height 16–1080."); return;
+    }
     Job *job = calloc(1, sizeof(*job));
     if (!job) return;
     job->type = type; job->host = g_strdup(host);
     job->app_id = type == JOB_STREAM ? app_ids[index] : 0;
     job->fps = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(fps_spin));
     job->bitrate = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(bitrate_spin));
-    int res = gtk_combo_box_get_active(GTK_COMBO_BOX(res_combo));
-    const int widths[] = {640, 800, 960}, heights[] = {360, 450, 540};
-    job->width = widths[res]; job->height = heights[res];
+    job->width = width; job->height = height;
     if (type == JOB_PAIR) {
         unsigned int n;
         if (RAND_bytes((unsigned char *)&n, sizeof(n)) != 1) { g_free(job->host); free(job); return; }
@@ -210,6 +234,11 @@ static gboolean close_window(GtkWidget *widget, GdkEvent *event, gpointer data) 
 }
 static void stop_clicked(GtkWidget *widget, gpointer data) { request_stop(); }
 static void quit_clicked(GtkWidget *widget, gpointer data) { close_window(widget, NULL, NULL); }
+static void refresh_clicked(GtkWidget *widget, gpointer data) {
+    /* Defer until GTK has painted, including while the stream is paused or idle. */
+    full_refresh_pending = 1;
+    gtk_widget_queue_draw(window);
+}
 static void pixbuf_free(guchar *pixels, gpointer data) { free(pixels); }
 static Viewport current_view(void) {
     GtkAllocation a; gtk_widget_get_allocation(canvas, &a);
@@ -408,11 +437,25 @@ static gboolean tick(gpointer data) {
         frame_w = w; frame_h = h;
         gtk_widget_queue_draw(canvas);
     }
-    /* Flush X rendering before asking the EPDC to display its framebuffer. */
-    if (refresh_pending) {
+    /* Paint queued exposes now: syncing X alone does not run GTK's draw handler.
+     * This presents the newest frame in the same tick, without an extra timer delay. */
+    gdk_window_process_updates(gtk_widget_get_window(window), TRUE);
+    if (refresh_pending || full_refresh_pending) {
         gdk_display_sync(gdk_display_get_default());
-        if (eink_refresh(0) < 0) fprintf(stderr, "FBInk refresh failed\n");
-        refresh_pending = 0;
+        int use_full_refresh = full_refresh_pending;
+        if (full_refresh_pending) {
+            if (eink_clear() == 0) {
+                /* eips clears framebuffer pixels, not GTK's backing state.
+                 * Repaint every child immediately, even with a 1 FPS stream
+                 * or no incoming frames, so the screen does not stay blank. */
+                gdk_window_invalidate_rect(gtk_widget_get_window(window), NULL, TRUE);
+                gdk_window_process_updates(gtk_widget_get_window(window), TRUE);
+                gdk_display_sync(gdk_display_get_default());
+                use_full_refresh = 0;
+            } else fprintf(stderr, "eips -c failed; falling back to FBInk full refresh\n");
+        }
+        if (eink_refresh(use_full_refresh) < 0) fprintf(stderr, "FBInk refresh failed\n");
+        refresh_pending = full_refresh_pending = 0;
     }
     return TRUE;
 }
@@ -484,12 +527,12 @@ int main(int argc, char **argv) {
         "style \"moonlight\" { font_name=\"DejaVu Sans 14\" bg[NORMAL]=\"#ffffff\" fg[NORMAL]=\"#000000\" base[NORMAL]=\"#ffffff\" text[NORMAL]=\"#000000\" bg[PRELIGHT]=\"#eeeeee\" fg[PRELIGHT]=\"#000000\" } class \"*\" style \"moonlight\"" :
         "style \"moonlight\" { font_name=\"Sans 11\" bg[NORMAL]=\"#ffffff\" fg[NORMAL]=\"#000000\" base[NORMAL]=\"#ffffff\" text[NORMAL]=\"#000000\" } class \"*\" style \"moonlight\"");
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), is_kindle ? "L:A_N:application_PC:N_O:R_ID:org.moonlight.kindle" : "Moonlight for Kindle · GTK2");
+    gtk_window_set_title(GTK_WINDOW(window), is_kindle ? "L:A_N:application_PC:N_O:R_ID:org.moonlight.kindle" : "Moonlight");
     gtk_window_set_default_size(GTK_WINDOW(window), is_kindle ? 1448 : 1000, is_kindle ? 1072 : 700);
     gtk_container_set_border_width(GTK_CONTAINER(window), 4);
     if (is_kindle) { gtk_window_set_decorated(GTK_WINDOW(window), FALSE); gtk_window_fullscreen(GTK_WINDOW(window)); }
     GtkWidget *box = gtk_vbox_new(FALSE, 2); root_box = box; gtk_container_add(GTK_CONTAINER(window), box);
-    header = gtk_label_new("Moonlight for Kindle");
+    header = gtk_label_new("Moonlight");
     gtk_box_pack_start(GTK_BOX(box), header, FALSE, FALSE, 0);
     controls = gtk_vbox_new(FALSE, 1); gtk_box_pack_start(GTK_BOX(box), controls, FALSE, FALSE, 0);
     GtkWidget *host_row = gtk_hbox_new(FALSE, 8);
@@ -504,12 +547,24 @@ int main(int argc, char **argv) {
     apps_combo = gtk_combo_box_new_text(); row(stream_row, "App", apps_combo);
     res_combo = gtk_combo_box_new_text();
     gtk_combo_box_append_text(GTK_COMBO_BOX(res_combo), "640 × 360"); gtk_combo_box_append_text(GTK_COMBO_BOX(res_combo), "800 × 450");
-    gtk_combo_box_append_text(GTK_COMBO_BOX(res_combo), "960 × 540"); gtk_combo_box_set_active(GTK_COMBO_BOX(res_combo), 0); row(stream_row, "Resolution", res_combo);
+    gtk_combo_box_append_text(GTK_COMBO_BOX(res_combo), "960 × 540"); gtk_combo_box_append_text(GTK_COMBO_BOX(res_combo), "Custom"); gtk_combo_box_set_active(GTK_COMBO_BOX(res_combo), 0); row(stream_row, "Resolution", res_combo);
     GtkWidget *rates = gtk_hbox_new(FALSE, 6);
     gtk_box_pack_start(GTK_BOX(stream_row), rates, FALSE, FALSE, 0);
-    fps_spin = gtk_spin_button_new_with_range(5, 30, 1); gtk_spin_button_set_value(GTK_SPIN_BUTTON(fps_spin), 10); gtk_entry_set_width_chars(GTK_ENTRY(fps_spin), 2);
+    fps_spin = gtk_spin_button_new_with_range(1, 30, 1); gtk_spin_button_set_value(GTK_SPIN_BUTTON(fps_spin), 10); gtk_entry_set_width_chars(GTK_ENTRY(fps_spin), 2);
     bitrate_spin = gtk_spin_button_new_with_range(250, 10000, 250); gtk_spin_button_set_value(GTK_SPIN_BUTTON(bitrate_spin), 1000); gtk_entry_set_width_chars(GTK_ENTRY(bitrate_spin), 5);
     row(rates, "FPS", fps_spin); row(rates, "kbps", bitrate_spin);
+    custom_row = gtk_hbox_new(FALSE, 8);
+    gtk_box_pack_start(GTK_BOX(controls), custom_row, FALSE, FALSE, 0);
+    width_spin = gtk_spin_button_new_with_range(16, 1920, 2);
+    height_spin = gtk_spin_button_new_with_range(16, 1080, 2);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(width_spin), 800);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(height_spin), 600);
+    gtk_entry_set_width_chars(GTK_ENTRY(width_spin), 4); gtk_entry_set_width_chars(GTK_ENTRY(height_spin), 4);
+    if (is_kindle) { gtk_widget_set_size_request(width_spin, -1, 40); gtk_widget_set_size_request(height_spin, -1, 40); }
+    row(custom_row, "Width", width_spin); row(custom_row, "Height", height_spin);
+    gtk_box_pack_start(GTK_BOX(custom_row), gtk_label_new("px · even values"), FALSE, FALSE, 0);
+    gtk_widget_show_all(custom_row); gtk_widget_hide(custom_row); gtk_widget_set_no_show_all(custom_row, TRUE);
+    g_signal_connect(res_combo, "changed", G_CALLBACK(resolution_changed), NULL);
     actions = gtk_hbox_new(FALSE, 4); gtk_box_pack_start(GTK_BOX(box), actions, FALSE, FALSE, 0);
     button(actions, "Pair", G_CALLBACK(start_job), GINT_TO_POINTER(JOB_PAIR));
     button(actions, "Load apps", G_CALLBACK(start_job), GINT_TO_POINTER(JOB_LIST));
@@ -548,6 +603,7 @@ int main(int argc, char **argv) {
     GtkWidget *bottom = gtk_hbox_new(FALSE, 3); bottom_bar = bottom; gtk_box_pack_start(GTK_BOX(box), bottom, FALSE, FALSE, 0);
     button(bottom, "Keyboard", G_CALLBACK(toggle_keyboard), NULL);
     stream_menu_button = button(bottom, "Back to video", G_CALLBACK(hide_stream_controls), NULL);
+    button(bottom, "Refresh screen", G_CALLBACK(refresh_clicked), NULL);
     stop_button = button(bottom, "Disconnect", G_CALLBACK(stop_clicked), NULL);
     button(bottom, "Exit", G_CALLBACK(quit_clicked), NULL);
     g_signal_connect(window, "map-event", G_CALLBACK(window_mapped), NULL);
@@ -563,7 +619,7 @@ int main(int argc, char **argv) {
     g_signal_connect(host_entry, "changed", G_CALLBACK(host_changed), NULL);
     load_settings(); gtk_widget_show_all(window); gtk_widget_hide(osk); gtk_widget_hide(text_bar); gtk_widget_hide(stream_menu_button);
     gtk_widget_set_sensitive(stop_button, FALSE); gtk_widget_set_sensitive(text_entry, FALSE);
-    g_timeout_add(100, tick, NULL);
+    g_timeout_add(33, tick, NULL);
     if (smoke) g_timeout_add(1500, smoke_done, NULL);
     gtk_main();
     if (picture) g_object_unref(picture);

@@ -55,15 +55,18 @@ static int publish(void) {
     if (w < 1 || h < 1 || w > 1920 || h > 1080) return -1;
     uint8_t *rgb = malloc((size_t)w * h * 3);
     if (!rgb) return -1;
+    /* Convert straight to luminance on e-ink, avoiding RGB conversion followed
+     * by a second weighted RGB-to-gray pass. Expand backward in the same buffer
+     * only because GTK2's RGB pixbuf needs three identical channels. */
     scaler = sws_getCachedContext(scaler, w, h, frame->format, w, h,
-              AV_PIX_FMT_RGB24, SWS_FAST_BILINEAR, NULL, NULL, NULL);
+              gray ? AV_PIX_FMT_GRAY8 : AV_PIX_FMT_RGB24, SWS_FAST_BILINEAR, NULL, NULL, NULL);
     if (!scaler) { free(rgb); return -1; }
-    uint8_t *planes[4] = {rgb, NULL, NULL, NULL}; int strides[4] = {w * 3, 0, 0, 0};
+    uint8_t *planes[4] = {rgb, NULL, NULL, NULL}; int strides[4] = {gray ? w : w * 3, 0, 0, 0};
     if (sws_scale(scaler, (const uint8_t *const *)frame->data, frame->linesize,
                   0, h, planes, strides) != h) { free(rgb); return -1; }
-    if (gray) for (size_t i = 0; i < (size_t)w * h * 3; i += 3) {
-        uint8_t y = (77U * rgb[i] + 150U * rgb[i+1] + 29U * rgb[i+2] + 128U) >> 8;
-        rgb[i] = rgb[i+1] = rgb[i+2] = y;
+    if (gray) for (size_t i = (size_t)w * h; i-- > 0;) {
+        uint8_t y = rgb[i];
+        rgb[3*i] = rgb[3*i+1] = rgb[3*i+2] = y;
     }
     pthread_mutex_lock(&lock);
     free(latest); latest = rgb; frame_w = w; frame_h = h; decoded++;
