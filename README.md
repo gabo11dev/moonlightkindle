@@ -1,4 +1,4 @@
-# Moonlight
+# Moonlight for Kindle
 
 An experimental GTK2 Moonlight client for jailbroken Kindle e-readers. Stream a PC running [Sunshine](https://github.com/LizardByte/Sunshine) to an e-ink display, with touch mouse input and a basic on-screen keyboard.
 
